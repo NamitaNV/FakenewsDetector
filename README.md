@@ -1,53 +1,73 @@
 # 📰 Fake News Detector
 
-A machine learning web app that classifies a news article as **REAL** or **FAKE** using TF-IDF features and Logistic Regression, built with scikit-learn and Streamlit.
+An NLP-powered Streamlit app that classifies a news article as **REAL** or **FAKE**. It compares several classical text-classification pipelines, keeps the best one, and explains which terms pushed the prediction in either direction.
 
-> **Note:** This project is a learning/demo project. The model learns writing-style and source patterns from a fixed dataset. It does **not** verify facts and should not be used as an independent fact-checker.
+> **Note:** This is an educational project. The model learns writing style and vocabulary patterns from a fixed dataset — it does **not** verify facts and should never be used as an independent fact-checker.
 
 ---
 
 ## Features
 
-- Compares three text-classification setups on a held-out validation split:
-  - Passive Aggressive Classifier + TF-IDF
+- Trains and compares three pipelines on the same held-out split:
   - Logistic Regression + TF-IDF
-  - Logistic Regression + Count Vectorizer
-- Trains and saves the final model (Logistic Regression + TF-IDF with unigrams and bigrams)
-- Interactive Streamlit app where you enter a title, author and article text
-- Shows the predicted label (REAL / FAKE) with a model confidence score
+  - Passive Aggressive Classifier + TF-IDF
+  - Logistic Regression + Count Vectors
+- Automatically selects the winner by F1 score (accuracy as tie-breaker)
+- Saves the trained model, vectorizer and a metadata report (`model_meta.json`)
+- **Detect** tab: paste a headline and/or article, get a REAL/FAKE verdict with confidence
+- **Why this verdict?** explains the decision by showing the highest-weighted terms in your text
+- **Performance** tab: accuracy, precision, recall, F1, confusion matrix and comparison table
+- **Dataset** tab: browse REAL/FAKE articles and load a random sample into the detector
+- Robust input handling: HTML tags, URLs and extra whitespace are stripped; very short inputs are flagged
 
 ## Tech Stack
 
 - Python 3
-- pandas, scikit-learn, matplotlib
+- pandas, NumPy, scikit-learn, matplotlib
 - Streamlit
 
 ## Dataset
 
-[Kaggle Fake News dataset](https://www.kaggle.com/c/fake-news) with the files `train.csv`, `test.csv` and `submit.csv`.
+The project uses the [Kaggle Fake and Real News dataset](https://www.kaggle.com/datasets/clmentbisaillon/fake-and-real-news-dataset) (`True.csv` and `Fake.csv`), placed next to `fake_news.py`.
 
-| Column | Description |
-| ------ | ----------- |
-| `title` | Headline of the article |
-| `author` | Author name |
-| `text` | Article body |
-| `label` | `1` = FAKE, `0` = REAL (training data only) |
+| File | Label | Description |
+| --- | --- | --- |
+| `True.csv` | `0` = REAL | Reuters-style real news articles |
+| `Fake.csv` | `1` = FAKE | Articles from fake-news sources |
 
-The title, author and text are combined into a single `total` field before vectorization.
+Both files contain `title`, `text`, `subject` and `date` columns. Only `title` and `text` are used for training.
+
+### What happens to the data
+
+1. HTML tags, URLs and repeated whitespace are removed.
+2. `title` and `text` are concatenated into a single `total` field.
+3. Rows with no usable text are dropped.
+4. Articles with conflicting labels and exact duplicates are removed to avoid leakage.
+
+Current dataset snapshot:
+
+| Step | Count |
+| --- | --- |
+| Rows loaded | 44,898 |
+| Rows without text | 9 |
+| Duplicate articles removed | 5,794 |
+| Articles used for training | **39,095** (21,195 REAL / 17,900 FAKE) |
 
 ## Project Structure
 
 ```
 .
-├── train.py                 # Data loading, model comparison, final training
-├── app.py                   # Streamlit web app
-├── model.pkl                # Saved Logistic Regression model (generated)
-├── tfidf_vectorizer.pkl     # Saved TF-IDF vectorizer (generated)
+├── fake_news.py              # Cleaning, training, evaluation and artifact export
+├── app.py                    # Streamlit web app
+├── model.pkl                 # Saved classifier (generated)
+├── tfidf_vectorizer.pkl      # Saved vectorizer (generated; name kept for compatibility)
+├── model_meta.json           # Metrics, dataset stats and training metadata (generated)
+├── metrics/                  # Confusion-matrix images (generated)
 ├── requirements.txt
+├── True.csv                  # Dataset (download separately)
+├── Fake.csv                  # Dataset (download separately)
 └── README.md
 ```
-
-> Rename `train.py` and `app.py` to match your actual file names.
 
 ## Getting Started
 
@@ -64,27 +84,47 @@ cd FakenewsDetector
 pip install -r requirements.txt
 ```
 
-Run the training script and the app in the same environment, because pickled models can break across scikit-learn versions.
+Train and run the app in the **same environment** — pickled scikit-learn models can break across library versions.
 
 ### 3. Add the dataset
 
-Download the dataset from Kaggle and place the CSV files in `../input/fake-news/`, or set the `FAKE_NEWS_INPUT` environment variable to your folder:
+Download `True.csv` and `Fake.csv` from Kaggle and place them next to `fake_news.py`, or point the trainer at another folder with the `FAKE_NEWS_DATA_DIR` environment variable:
+
+```powershell
+# Windows (PowerShell)
+$env:FAKE_NEWS_DATA_DIR="C:\path\to\dataset"
+```
 
 ```bash
 # Linux / macOS
-export FAKE_NEWS_INPUT=/path/to/fake-news
-
-# Windows (PowerShell)
-$env:FAKE_NEWS_INPUT="C:\path\to\fake-news"
+export FAKE_NEWS_DATA_DIR=/path/to/dataset
 ```
 
 ### 4. Train the model
 
 ```bash
-python train.py
+python fake_news.py
 ```
 
-This prints the accuracy of each model, shows a confusion matrix for each, and saves `model.pkl` and `tfidf_vectorizer.pkl` next to the script.
+This prints metrics for all three pipelines, writes a confusion matrix for each into `metrics/`, refits the best pipeline on the full dataset, and saves the artifacts next to the script.
+
+Optional arguments:
+
+| Flag | Default | Purpose |
+| --- | --- | --- |
+| `--data-dir` | script folder | Folder containing `True.csv` and `Fake.csv` |
+| `--output-dir` | script folder | Where artifacts and figures are written |
+| `--test-size` | `0.2` | Held-out split size (stratified) |
+| `--max-features` | `50000` | Maximum vocabulary size |
+| `--max-iter` | `1000` | Maximum solver iterations |
+| `--c` | `1e5` | Logistic Regression inverse regularization strength |
+| `--seed` | `0` | Random seed |
+
+Example:
+
+```bash
+python fake_news.py --test-size 0.2 --max-features 50000 --seed 42
+```
 
 ### 5. Run the app
 
@@ -96,41 +136,57 @@ Then open the local URL shown in the terminal (usually http://localhost:8501).
 
 ## How It Works
 
-1. **Preprocessing:** Missing values are filled with a space, and `title + author + text` are joined into one string.
-2. **Vectorization:** `TfidfVectorizer` with up to 50,000 features and unigrams + bigrams.
-3. **Classification:** `LogisticRegression` (`max_iter=1000`).
-4. **Evaluation:** 80/20 train/validation split (`random_state=0`), accuracy and confusion matrix.
-5. **Inference:** The app builds the same combined text from the form inputs, vectorizes it, and returns the label and the predicted class probability as confidence.
+### Training (`fake_news.py`)
+
+1. **Load** `True.csv` (REAL) and `Fake.csv` (FAKE) and assign labels.
+2. **Clean** HTML, URLs and whitespace; combine `title + text`.
+3. **Deduplicate** exact articles and drop rows whose text carries conflicting labels.
+4. **Split** the data 80/20, stratified by label, with a fixed random seed.
+5. **Evaluate** three vectorizer/classifier combinations with accuracy, precision, recall, F1 and a confusion matrix.
+6. **Select** the best pipeline by F1, refit it on the full dataset, and save it.
+
+### Inference (`app.py`)
+
+1. The entered headline and article are joined into one string (same shape as training).
+2. The saved vectorizer converts it into numeric features.
+3. The saved classifier predicts REAL or FAKE and returns per-class probabilities.
+4. For linear models, each term's TF-IDF weight is multiplied by its learned coefficient to show which words pulled toward FAKE or REAL.
 
 ## Results
 
-| Model | Accuracy |
-| ----- | -------- |
-| Passive Aggressive + TF-IDF | _fill in_ |
-| Logistic Regression + TF-IDF | _fill in_ |
-| Logistic Regression + Count Vectorizer | _fill in_ |
+Held-out 20% validation split (stratified, `random_state=0`):
 
-Run `train.py` and replace the placeholders with your own numbers.
+| Pipeline | Accuracy | Precision | Recall | F1 |
+| --- | --- | --- | --- | --- |
+| **Logistic Regression + Count Vectors** | **99.59%** | **99.53%** | **99.58%** | **99.55%** |
+| Passive Aggressive + TF-IDF | 99.48% | 99.55% | 99.30% | 99.43% |
+| Logistic Regression + TF-IDF | 99.32% | 99.36% | 99.16% | 99.26% |
+
+The current saved model is **Logistic Regression + Count Vectors**, refit on the full dataset. Metrics are regenerated every time you run `fake_news.py` and are also displayed in the app's **Performance** tab.
+
+> High accuracy here reflects how separable this particular dataset is, not how well the model generalizes to today's news.
 
 ## Limitations
 
-- The dataset is a fixed snapshot from around 2016, so performance on current news is likely to be much lower.
-- The model picks up on style, vocabulary and author/source patterns rather than checking facts.
-- In this dataset the author field can be a strong shortcut feature, so predictions may change noticeably if the author is left blank.
-- The confidence score reflects the model's certainty, not the probability that the article is actually true or false.
+- The dataset is a fixed snapshot from around 2016, so real-world accuracy on current articles will be much lower.
+- The model learns style, vocabulary and source-specific patterns, not factual correctness.
+- Reuters articles in `True.csv` share a distinctive style, which makes the classes easier to separate than real-world news.
+- Count vectors and TF-IDF give equal weight to terms regardless of context, so sarcasm, quotes and negations are easily missed.
+- The confidence score is the model's certainty, **not** the probability that an article is true.
+- Inputs under ~15 words trigger a warning because short text is unreliable.
 
 ## Future Improvements
 
-- Save a single scikit-learn `Pipeline` instead of two separate pickle files
+- Save one scikit-learn `Pipeline` instead of separate model/vectorizer pickles
 - Tune regularization with cross-validation and calibrate probabilities
-- Report precision, recall and F1 in addition to accuracy
-- Evaluate on more recent and more diverse news sources
-- Try transformer-based models such as BERT
-
-## License
-
-This project is licensed under the MIT License. See the `LICENSE` file for details.
+- Evaluate on recent, more diverse news sources to measure real-world drift
+- Add cross-validation instead of a single train/test split
+- Experiment with transformer models such as DistilBERT or RoBERTa
+- Add tests for preprocessing, training and inference
 
 ## Author
 
 **Namita Nandakumar Varier**
+
+- GitHub: [@NamitaNV](https://github.com/NamitaNV)
+- Repository: [FakenewsDetector](https://github.com/NamitaNV/FakenewsDetector)
